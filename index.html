@@ -171,7 +171,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/holistic.js" crossorigin="anonymous"></script>
-<script src="tid-model.js"></script>
+<!-- ?v= sürümü: dosyalar güncellenince artırılır ki tarayıcı önbellekteki eski kopyayı kullanmasın -->
+<script src="tid-model.js?v=4"></script>
 <script>
 (async function () {
   "use strict";
@@ -205,7 +206,7 @@
 
   // Model
   try {
-    const res = await fetch("model.json");
+    const res = await fetch("model.json?v=4");
     model = new TidModel.SignClassifier(await res.json());
   } catch (e) {
     $("overlay-text").textContent = "Model dosyası yüklenemedi. Sayfayı yenileyin.";
@@ -230,7 +231,7 @@
     signsEl.querySelectorAll("li").forEach((li) => li.classList.toggle("selected", li.dataset.sign === sign));
     link.hidden = !SPREADTHESIGN[sign];
     if (SPREADTHESIGN[sign]) link.href = "https://www.spreadthesign.com/tr.tr/word/" + SPREADTHESIGN[sign] + "/0/";
-    if (model.photos.has(sign)) {
+    if (model.photos && model.photos.has(sign)) {
       clearInterval(skelTimer);
       img.alt = model.signs[sign].tr + " işaretinin yapılışı";
       img.src = "ornekler/" + sign + ".webp";

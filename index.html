@@ -97,9 +97,9 @@
     position: relative; aspect-ratio: 4 / 3; max-width: 100%; border-radius: 10px; overflow: hidden;
     background: var(--stage); display: grid; place-items: center;
   }
-  .howto-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .howto-frame .fallback { color: #e8edf4; font-size: .9rem; padding: 16px; text-align: center; }
-  .howto-frame .fallback a { color: var(--caption); }
+  .howto-frame img, .howto-frame canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
+  #howto-link { color: var(--muted); }
+  #howto-link:hover { color: var(--ink); }
   .howto figcaption { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
   .howto figcaption strong { font-size: 1.05rem; }
   .howto figcaption span { font-size: .8rem; color: var(--muted); }
@@ -154,9 +154,10 @@
       <figure class="howto">
         <div class="howto-frame" id="howto-frame">
           <img id="howto-img" alt="" hidden>
-          <div class="fallback" id="howto-fallback" hidden></div>
+          <canvas id="howto-canvas" width="480" height="360" role="img" aria-label="İşaretin iskelet animasyonu"></canvas>
         </div>
         <figcaption><strong id="howto-name">Merhaba</strong><span>nasıl yapılır · ayna gibi yapın</span></figcaption>
+        <a class="note" id="howto-link" target="_blank" rel="noopener" hidden>Gerçek videoyu SpreadTheSign'da izleyin ↗</a>
       </figure>
       <h2>Tanıyabildiği işaretler <span class="note" style="font-weight:400">· örneği görmek için seçin</span></h2>
       <ul class="signs" id="signs"></ul>
@@ -212,33 +213,80 @@
     return;
   }
 
-  // Örnek hareketler: ornekler/<isaret>.webp (record_reference.py ile kaydedilir).
-  // Dosya yoksa SpreadTheSign Türkçe sözlüğündeki sayfasına bağlantı verilir.
+  // Örnek hareketler: ornekler/<isaret>.webp varsa o gösterilir (record_reference.py ile kaydedilir);
+  // yoksa eğitim kayıtlarından seçilen tipik kaydın iskelet animasyonu çizilir (görüntü içermez).
   const SPREADTHESIGN = {
     merhaba: "1774/merhaba", tesekkurler: "6900/tesekkurler", yardim: "214/yardim", su: "1265/su",
     tuvalet: "605/tuvalet", bilet: "1514/bilet", ucak: "2518/ucak", agri: "11558/agrimak", hayir: "421/hayir",
   };
+  const skeletons = model.skeletons || {};
   let selected = model.labels.find((s) => s !== "_bos");
+  let skeleton = null, skelFrame = 0, skelTimer = null;
 
   function showHowto(sign) {
     selected = sign;
-    const img = $("howto-img"), fb = $("howto-fallback");
+    const img = $("howto-img"), canvas = $("howto-canvas"), link = $("howto-link");
     $("howto-name").textContent = model.signs[sign][lang];
     signsEl.querySelectorAll("li").forEach((li) => li.classList.toggle("selected", li.dataset.sign === sign));
-    img.alt = model.signs[sign].tr + " işaretinin yapılışı";
-    img.onload = () => { img.hidden = false; fb.hidden = true; };
-    img.onerror = () => {
-      img.hidden = true; fb.hidden = false;
-      fb.textContent = "Bu işaretin örneği henüz eklenmedi. ";
-      if (SPREADTHESIGN[sign]) {
-        const a = document.createElement("a");
-        a.href = "https://www.spreadthesign.com/tr.tr/word/" + SPREADTHESIGN[sign] + "/0/";
-        a.target = "_blank"; a.rel = "noopener";
-        a.textContent = "SpreadTheSign'da izleyin";
-        fb.appendChild(a);
-      }
+    link.hidden = !SPREADTHESIGN[sign];
+    if (SPREADTHESIGN[sign]) link.href = "https://www.spreadthesign.com/tr.tr/word/" + SPREADTHESIGN[sign] + "/0/";
+    if (model.photos.has(sign)) {
+      clearInterval(skelTimer);
+      img.alt = model.signs[sign].tr + " işaretinin yapılışı";
+      img.src = "ornekler/" + sign + ".webp";
+      img.hidden = false; canvas.hidden = true;
+    } else {
+      img.hidden = true; canvas.hidden = false;
+      playSkeleton(sign);
+    }
+  }
+
+  function playSkeleton(sign) {
+    clearInterval(skelTimer);
+    skeleton = skeletons[sign] || null;
+    skelFrame = 0;
+    drawSkeletonFrame();
+    if (!skeleton) return;
+    // 15 kare/sn; sonda kısa bir bekleme ile döngü
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    skelTimer = setInterval(() => {
+      skelFrame = (skelFrame + 1) % (skeleton.frames.length + 8);
+      drawSkeletonFrame();
+    }, reduce ? 200 : 66);
+  }
+
+  function drawSkeletonFrame() {
+    const c = $("howto-canvas"), g = c.getContext("2d"), W = c.width, H = c.height;
+    g.fillStyle = "#0b1018"; g.fillRect(0, 0, W, H);
+    if (!skeleton) {
+      g.fillStyle = "#96a2b4"; g.font = "16px sans-serif"; g.textAlign = "center";
+      g.fillText("Bu işaretin örneği yok", W / 2, H / 2);
+      return;
+    }
+    const f = skeleton.frames[Math.min(skelFrame, skeleton.frames.length - 1)];
+    const { s, ox, oy } = skeleton.fit(W, H);
+    const P = (p) => [ox + p[0] * s, oy + p[1] * s];
+    const seg = (a, b, color, w) => {
+      const [x1, y1] = P(a), [x2, y2] = P(b);
+      g.strokeStyle = color; g.lineWidth = w; g.lineCap = "round";
+      g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
     };
-    img.src = "ornekler/" + sign + ".webp";
+    const pose = f.pose;  // burun, sol omuz, sağ omuz, sol dirsek, sağ dirsek, sol bilek, sağ bilek
+    const body = "rgba(232,237,244,.55)";
+    // baş: omuz genişliğine göre bir daire
+    const sw = Math.hypot(pose[1][0] - pose[2][0], pose[1][1] - pose[2][1]) * s;
+    const [hx, hy] = P(pose[0]);
+    g.strokeStyle = body; g.lineWidth = 3;
+    g.beginPath(); g.arc(hx, hy, sw * 0.3, 0, Math.PI * 2); g.stroke();
+    seg(pose[1], pose[2], body, 4);
+    seg(pose[1], pose[3], body, 4); seg(pose[3], pose[5], body, 4);
+    seg(pose[2], pose[4], body, 4); seg(pose[4], pose[6], body, 4);
+    for (const [hand, color] of [[f.left, "#ffd23f"], [f.right, "#5ec8ff"]]) {
+      if (!hand) continue;
+      for (const [a, b] of HAND_EDGES) seg(hand[a], hand[b], color, 3);
+      g.fillStyle = color;
+      for (const p of hand) { const [x, y] = P(p); g.beginPath(); g.arc(x, y, 2.5, 0, Math.PI * 2); g.fill(); }
+    }
   }
 
   function buildSignList() {

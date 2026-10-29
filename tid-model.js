@@ -38,6 +38,53 @@
     return out;
   }
 
+  /**
+   * Bir kaydı (zaman x 147) çizilebilir iskelet karelerine çevirir: 7 poz noktası, sol ve sağ el.
+   * El takibi birkaç kare kaybolduysa son görülen el en fazla 5 kare boyunca tutulur (titremesin diye).
+   * fit(W, H) iskeleti tuvale sığdıracak ölçek ve kaydırmayı verir.
+   */
+  function buildSkeleton(t) {
+    const [T, F] = t.shape;
+    const P = POSE_IDS.length;
+    const pts = (row, start, n) => {
+      const out = [];
+      let any = false;
+      for (let i = 0; i < n; i++) {
+        const x = row[start + i * 3], y = row[start + i * 3 + 1];
+        if (x !== 0 || y !== 0) any = true;
+        out.push([x, y]);
+      }
+      return any ? out : null;
+    };
+    const frames = [];
+    const last = { left: null, right: null }, age = { left: 99, right: 99 };
+    for (let k = 0; k < T; k++) {
+      const row = t.data.subarray(k * F, (k + 1) * F);
+      const f = { pose: pts(row, 0, P), left: pts(row, P * 3, 21), right: pts(row, P * 3 + 63, 21) };
+      for (const side of ["left", "right"]) {
+        if (f[side]) { last[side] = f[side]; age[side] = 0; }
+        else if (++age[side] <= 5) f[side] = last[side];
+      }
+      if (f.pose) frames.push(f);
+    }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const f of frames) {
+      const sw = Math.hypot(f.pose[1][0] - f.pose[2][0], f.pose[1][1] - f.pose[2][1]);
+      const all = [...f.pose, ...(f.left || []), ...(f.right || []),
+        [f.pose[0][0], f.pose[0][1] - sw * 0.35]];  // başın üstü
+      for (const [x, y] of all) {
+        minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+      }
+    }
+    const fit = (W, H) => {
+      const m = 0.08;
+      const s = Math.min(W * (1 - 2 * m) / (maxX - minX || 1), H * (1 - 2 * m) / (maxY - minY || 1));
+      return { s, ox: W / 2 - ((minX + maxX) / 2) * s, oy: H / 2 - ((minY + maxY) / 2) * s };
+    };
+    return { frames, fit };
+  }
+
   const sigmoid = (x) => 1 / (1 + Math.exp(-x));
 
   // y = W x + b ; W (rows x cols) satır öncelikli
@@ -82,8 +129,11 @@
       this.confidenceThreshold = json.confidenceThreshold;
       this.stableFrames = json.stableFrames;
       this.handGrace = json.handGrace ?? 0.6;
+      this.photos = new Set(json.photos || []);
       this.w = {};
       for (const [k, v] of Object.entries(json.weights)) this.w[k] = decode(v);
+      this.skeletons = {};
+      for (const [k, v] of Object.entries(json.examples || {})) this.skeletons[k] = buildSkeleton(decode(v));
       this.hidden = this.w["gru.weight_hh_l0"].shape[1];
       this.layers = Object.keys(this.w).filter((k) => /^gru\.weight_ih_l\d+$/.test(k)).length;
     }
@@ -113,7 +163,7 @@
     }
   }
 
-  const api = { extractKeypoints, SignClassifier, decode, POSE_IDS };
+  const api = { extractKeypoints, SignClassifier, decode, buildSkeleton, POSE_IDS };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.TidModel = api;
 })(typeof window !== "undefined" ? window : globalThis);

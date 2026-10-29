@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TİD Altyazı Demosu</title>
+<meta name="description" content="Türk İşaret Dili işaretlerini kameradan tanıyıp dört dilde altyazıya çeviren prototip.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+  /* Yerleşim: solda kamera sahnesi + altyazı bandı, sağda tanınan işaretlerin canlı olasılıkları. */
+  :root {
+    --bg: #eef1f5;
+    --surface: #ffffff;
+    --ink: #121a26;
+    --muted: #5a6577;
+    --line: #d5dbe4;
+    --stage: #0b1018;
+    --caption: #ffd23f;   /* yayın altyazısı sarısı */
+    --caption-ink: #0b1018;
+    --good: #1f8a4c;
+    --font: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d121a; --surface: #151c27; --ink: #e8edf4; --muted: #96a2b4; --line: #263142;
+      --stage: #05080d; --caption: #ffd23f; --caption-ink: #0b1018; --good: #4cc27f; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d121a; --surface: #151c27; --ink: #e8edf4; --muted: #96a2b4; --line: #263142;
+    --stage: #05080d; --caption: #ffd23f; --caption-ink: #0b1018; --good: #4cc27f; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font);
+    padding-block: max(20px, env(safe-area-inset-top, 0px)) 32px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 20px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; }
+  h1 { font-size: clamp(1.5rem, 3vw, 2rem); line-height: 1.15; margin: 0; text-wrap: balance; }
+  h1 span { color: var(--muted); font-weight: 400; }
+  .tag { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+  @media (max-width: 860px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+
+  .stage {
+    position: relative; background: var(--stage); border-radius: 14px; overflow: hidden;
+    aspect-ratio: 4 / 3; max-width: 100%;
+  }
+  .stage canvas { width: 100%; height: 100%; display: block; object-fit: cover; }
+  .overlay {
+    position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
+    color: #e8edf4; padding: 24px; background: rgba(5, 8, 13, .72);
+  }
+  .overlay p { margin: 0 0 16px; max-width: 40ch; }
+  .caption-bar {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 16px 18px;
+    display: flex; justify-content: center; pointer-events: none;
+  }
+  .caption {
+    background: rgba(5, 8, 13, .82); color: var(--caption); font-weight: 700;
+    font-size: clamp(1.25rem, 3.6vw, 2.25rem); line-height: 1.2; padding: 6px 14px; border-radius: 6px;
+    text-align: center; max-width: 100%; overflow-wrap: anywhere;
+  }
+  .caption:empty { display: none; }
+  .caption.example { opacity: .55; }
+  .live-pill {
+    position: absolute; top: 12px; left: 12px; font: 500 .75rem var(--mono); letter-spacing: .04em;
+    background: rgba(5, 8, 13, .7); color: #e8edf4; padding: 4px 10px; border-radius: 999px;
+  }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+  .langs { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface); }
+  .langs button { border: 0; background: transparent; color: var(--ink); font: 700 .95rem var(--font); padding: 9px 14px; cursor: pointer; }
+  .langs button + button { border-left: 1px solid var(--line); }
+  .langs button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+  .btn {
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 10px;
+    font: 700 .95rem var(--font); padding: 9px 16px; cursor: pointer;
+  }
+  .btn.primary { background: var(--caption); color: var(--caption-ink); border-color: transparent; font-size: 1.05rem; padding: 12px 22px; }
+  button:focus-visible { outline: 3px solid var(--caption); outline-offset: 2px; }
+  button:disabled { opacity: .5; cursor: progress; }
+
+  aside { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: grid; gap: 14px; }
+  aside h2 { font-size: 1rem; margin: 0; }
+  .signs { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .signs li { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: .95rem; }
+  .signs .pct { font: 500 .8rem var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+  .bar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--muted); transition: width .12s linear; }
+  .signs li.top .bar i { background: var(--good); }
+  .signs li.top .name { font-weight: 700; }
+  .note { font-size: .85rem; color: var(--muted); margin: 0; }
+  .notes { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 12px; }
+  @media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>TİD Altyazı <span>· havalimanı demosu</span></h1>
+    <div class="tag">Prototip · 9 işaret · 4 dil</div>
+  </header>
+
+  <div class="grid">
+    <section style="display:grid;gap:12px;min-width:0">
+      <div class="stage">
+        <canvas id="view" width="640" height="480" aria-label="Kamera görüntüsü"></canvas>
+        <div class="live-pill" id="status" hidden>CANLI</div>
+        <div class="caption-bar"><div class="caption example" id="caption">Merhaba · Su · Teşekkürler</div></div>
+        <div class="overlay" id="overlay">
+          <div>
+            <p id="overlay-text">Kameranızı açın, belden yukarınız ve iki eliniz görünecek şekilde durun, sağdaki listeden bir işaret yapın.</p>
+            <button class="btn primary" id="start">Kamerayı başlat</button>
+          </div>
+        </div>
+      </div>
+      <div class="controls">
+        <div class="langs" role="group" aria-label="Altyazı dili">
+          <button data-lang="tr" aria-pressed="true">Türkçe</button>
+          <button data-lang="en" aria-pressed="false">English</button>
+          <button data-lang="de" aria-pressed="false">Deutsch</button>
+          <button data-lang="fr" aria-pressed="false">Français</button>
+        </div>
+        <button class="btn" id="clear">Altyazıyı temizle</button>
+      </div>
+    </section>
+
+    <aside>
+      <h2>Tanıyabildiği işaretler</h2>
+      <ul class="signs" id="signs"></ul>
+      <div class="notes">
+        <p class="note">Görüntü yalnızca bu cihazda işlenir; hiçbir sunucuya gönderilmez.</p>
+        <p class="note">Bu ilk prototip tek bir kişinin kayıtlarıyla eğitildi. Farklı kişilerde, ışıkta ve kamerada doğruluk düşebilir.</p>
+        <p class="note">İpucu: Bir işareti yaklaşık yarım saniye net yapın; ellerinizi 5 saniye indirince altyazı temizlenir.</p>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/holistic.js" crossorigin="anonymous"></script>
+<script src="tid-model.js"></script>
+<script>
+(async function () {
+  "use strict";
+  const MAX_WORDS = 6, CLEAR_AFTER_IDLE = 5000;
+  const HAND_EDGES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],
+    [9,13],[13,14],[14,15],[15,16],[13,17],[0,17],[17,18],[18,19],[19,20]];
+  const POSE_EDGES = [[11,12],[11,13],[13,15],[12,14],[14,16]];
+
+  const $ = (id) => document.getElementById(id);
+  const view = $("view"), ctx = view.getContext("2d");
+  const captionEl = $("caption"), signsEl = $("signs"), startBtn = $("start");
+
+  let model = null, lang = "tr", words = [], window_ = [], recent = [];
+  let lastHand = Date.now();
+
+  function renderCaption() {
+    if (!words.length) return;
+    captionEl.classList.remove("example");
+    captionEl.textContent = words.map((s) => model.signs[s][lang]).join(" ");
+  }
+
+  document.querySelectorAll(".langs button").forEach((b) => b.addEventListener("click", () => {
+    lang = b.dataset.lang;
+    document.querySelectorAll(".langs button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    if (words.length) renderCaption();
+    else if (captionEl.classList.contains("example") && model)
+      captionEl.textContent = ["merhaba", "su", "tesekkurler"].filter((s) => model.signs[s]).map((s) => model.signs[s][lang]).join(" · ");
+    if (model) buildSignList();
+  }));
+  $("clear").addEventListener("click", () => { words = []; captionEl.textContent = ""; });
+
+  // Model
+  try {
+    const res = await fetch("model.json");
+    model = new TidModel.SignClassifier(await res.json());
+  } catch (e) {
+    $("overlay-text").textContent = "Model dosyası yüklenemedi. Sayfayı yenileyin.";
+    startBtn.hidden = true;
+    return;
+  }
+
+  function buildSignList() {
+    signsEl.innerHTML = "";
+    model.labels.filter((s) => s !== "_bos").forEach((s) => {
+      const li = document.createElement("li");
+      li.dataset.sign = s;
+      li.innerHTML = '<span class="name"></span><span class="pct">–</span><span class="bar"><i></i></span>';
+      li.querySelector(".name").textContent = model.signs[s][lang];
+      signsEl.appendChild(li);
+    });
+  }
+  buildSignList();
+
+  function showProbs(probs) {
+    let best = -1, bestP = 0;
+    if (probs) model.labels.forEach((s, i) => { if (s !== "_bos" && probs[i] > bestP) { bestP = probs[i]; best = i; } });
+    signsEl.querySelectorAll("li").forEach((li) => {
+      const i = model.labels.indexOf(li.dataset.sign), p = probs ? probs[i] : 0;
+      li.querySelector(".bar i").style.width = (p * 100).toFixed(0) + "%";
+      li.querySelector(".pct").textContent = probs ? "%" + Math.round(p * 100) : "–";
+      li.classList.toggle("top", !!probs && i === best && p >= model.confidenceThreshold);
+    });
+  }
+
+  function drawLandmarks(results) {
+    const W = view.width, H = view.height;
+    const line = (pts, edges, color, width) => {
+      if (!pts) return;
+      ctx.strokeStyle = color; ctx.lineWidth = width;
+      ctx.beginPath();
+      for (const [a, b] of edges) { ctx.moveTo(pts[a].x * W, pts[a].y * H); ctx.lineTo(pts[b].x * W, pts[b].y * H); }
+      ctx.stroke();
+      ctx.fillStyle = color;
+      for (const p of pts) { ctx.beginPath(); ctx.arc(p.x * W, p.y * H, 2.5, 0, Math.PI * 2); ctx.fill(); }
+    };
+    line(results.poseLandmarks && POSE_EDGES.flat().map((i) => results.poseLandmarks[i]),
+      POSE_EDGES.map((_, k) => [2 * k, 2 * k + 1]), "rgba(255,255,255,.65)", 2);
+    line(results.leftHandLandmarks, HAND_EDGES, "#ffd23f", 2);
+    line(results.rightHandLandmarks, HAND_EDGES, "#5ec8ff", 2);
+  }
+
+  // MediaPipe geri çağrısında atılan bir hata döngüyü dondurur; bu yüzden her kare korumalı işlenir.
+  function onResults(results) {
+    try { handleResults(results); } catch (e) { console.error(e); }
+  }
+
+  function handleResults(results) {
+    ctx.drawImage(results.image, 0, 0, view.width, view.height);
+    drawLandmarks(results);
+    window_.push(TidModel.extractKeypoints(results));
+    if (window_.length > model.sequenceLength) window_.shift();
+
+    const hands = results.leftHandLandmarks || results.rightHandLandmarks;
+    if (hands) {
+      lastHand = Date.now();
+      if (window_.length === model.sequenceLength) {
+        const probs = model.predict(window_);
+        showProbs(probs);
+        let i = 0;
+        probs.forEach((p, k) => { if (p > probs[i]) i = k; });
+        const sign = model.labels[i];
+        recent.push(probs[i] >= model.confidenceThreshold ? sign : null);
+        if (recent.length > model.stableFrames) recent.shift();
+        const stable = recent.length === model.stableFrames && recent.every((r) => r === recent[0]);
+        if (stable && recent[0] && sign !== "_bos" && words[words.length - 1] !== sign) {
+          words.push(sign);
+          words = words.slice(-MAX_WORDS);
+          recent = [];
+          renderCaption();
+        }
+      }
+    } else {
+      recent = [];
+      showProbs(null);
+      if (words.length && Date.now() - lastHand > CLEAR_AFTER_IDLE) { words = []; captionEl.textContent = ""; }
+    }
+  }
+
+  startBtn.addEventListener("click", async () => {
+    startBtn.disabled = true;
+    $("overlay-text").textContent = "Kamera ve tanıma modeli hazırlanıyor… (ilk açılışta 10–20 saniye sürebilir)";
+    let stream;
+    try {
+      // collect.py ile aynı çözünürlük istenir; kamera vermezse kendi boyutu kullanılır
+      stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" }, audio: false });
+    } catch (e) {
+      $("overlay-text").textContent = "Kameraya erişilemedi. Tarayıcının adres çubuğundan kamera iznini verip sayfayı yenileyin.";
+      startBtn.disabled = false;
+      return;
+    }
+    const video = document.createElement("video");
+    video.playsInline = true; video.muted = true; video.srcObject = stream;
+    // Sayfaya eklenmemiş video öğesinde Chrome kareleri güncellemeyi bırakıyor (görüntü donuyor);
+    // bu yüzden görünmez ama belgede duran bir öğe olarak eklenir.
+    video.style.cssText = "position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none";
+    document.body.appendChild(video);
+    await video.play();
+
+    // Python tarafı görüntüyü aynalayıp öyle işliyor; burada da aynı şekilde aynalanmış kare gönderilir.
+    // Kare kameranın kendi boyutunda kalmalı: büyütmek ya da en-boy oranını bozmak el takibini düşürüyor.
+    const W = video.videoWidth || 640, H = video.videoHeight || 480;
+    const mirror = document.createElement("canvas");
+    mirror.width = W; mirror.height = H;
+    const mctx = mirror.getContext("2d");
+    view.width = W; view.height = H;
+    view.parentElement.style.aspectRatio = W + " / " + H;
+
+    const holistic = new Holistic({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/${f}` });
+    holistic.setOptions({ modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    holistic.onResults(onResults);
+
+    let started = false, lastTime = -1;
+    const loop = async () => {
+      // Kamera yeni kare vermediyse aynı kareyi tekrar işleme
+      if (video.currentTime === lastTime) { requestAnimationFrame(loop); return; }
+      lastTime = video.currentTime;
+      mctx.save(); mctx.scale(-1, 1); mctx.drawImage(video, -W, 0, W, H); mctx.restore();
+      try { await holistic.send({ image: mirror }); } catch (e) { console.error(e); }
+      if (!started) {
+        started = true;
+        $("overlay").hidden = true;
+        $("status").hidden = false;
+        captionEl.textContent = "";
+        captionEl.classList.remove("example");
+      }
+      requestAnimationFrame(loop);
+    };
+    loop();
+  });
+})();
+</script>
+</body>
+</html>

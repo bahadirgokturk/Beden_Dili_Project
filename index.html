@@ -92,8 +92,23 @@
 
   aside { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: grid; gap: 14px; }
   aside h2 { font-size: 1rem; margin: 0; }
-  .signs { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-  .signs li { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: .95rem; }
+  .howto { margin: 0; display: grid; gap: 8px; }
+  .howto-frame {
+    position: relative; aspect-ratio: 4 / 3; max-width: 100%; border-radius: 10px; overflow: hidden;
+    background: var(--stage); display: grid; place-items: center;
+  }
+  .howto-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .howto-frame .fallback { color: #e8edf4; font-size: .9rem; padding: 16px; text-align: center; }
+  .howto-frame .fallback a { color: var(--caption); }
+  .howto figcaption { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .howto figcaption strong { font-size: 1.05rem; }
+  .howto figcaption span { font-size: .8rem; color: var(--muted); }
+  .signs { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+  .signs li { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: .95rem;
+    padding: 6px 8px; margin: 0 -8px; border-radius: 8px; cursor: pointer; }
+  .signs li:hover { background: var(--bg); }
+  .signs li.selected { background: var(--bg); box-shadow: inset 3px 0 0 var(--caption); }
+  .signs li:focus-visible { outline: 3px solid var(--caption); outline-offset: 1px; }
   .signs .pct { font: 500 .8rem var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
   .bar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
   .bar i { display: block; height: 100%; width: 0; background: var(--muted); transition: width .12s linear; }
@@ -136,7 +151,14 @@
     </section>
 
     <aside>
-      <h2>Tanıyabildiği işaretler</h2>
+      <figure class="howto">
+        <div class="howto-frame" id="howto-frame">
+          <img id="howto-img" alt="" hidden>
+          <div class="fallback" id="howto-fallback" hidden></div>
+        </div>
+        <figcaption><strong id="howto-name">Merhaba</strong><span>nasıl yapılır · ayna gibi yapın</span></figcaption>
+      </figure>
+      <h2>Tanıyabildiği işaretler <span class="note" style="font-weight:400">· örneği görmek için seçin</span></h2>
       <ul class="signs" id="signs"></ul>
       <div class="notes">
         <p class="note">Görüntü yalnızca bu cihazda işlenir; hiçbir sunucuya gönderilmez.</p>
@@ -190,15 +212,49 @@
     return;
   }
 
+  // Örnek hareketler: ornekler/<isaret>.webp (record_reference.py ile kaydedilir).
+  // Dosya yoksa SpreadTheSign Türkçe sözlüğündeki sayfasına bağlantı verilir.
+  const SPREADTHESIGN = {
+    merhaba: "1774/merhaba", tesekkurler: "6900/tesekkurler", yardim: "214/yardim", su: "1265/su",
+    tuvalet: "605/tuvalet", bilet: "1514/bilet", ucak: "2518/ucak", agri: "11558/agrimak", hayir: "421/hayir",
+  };
+  let selected = model.labels.find((s) => s !== "_bos");
+
+  function showHowto(sign) {
+    selected = sign;
+    const img = $("howto-img"), fb = $("howto-fallback");
+    $("howto-name").textContent = model.signs[sign][lang];
+    signsEl.querySelectorAll("li").forEach((li) => li.classList.toggle("selected", li.dataset.sign === sign));
+    img.alt = model.signs[sign].tr + " işaretinin yapılışı";
+    img.onload = () => { img.hidden = false; fb.hidden = true; };
+    img.onerror = () => {
+      img.hidden = true; fb.hidden = false;
+      fb.textContent = "Bu işaretin örneği henüz eklenmedi. ";
+      if (SPREADTHESIGN[sign]) {
+        const a = document.createElement("a");
+        a.href = "https://www.spreadthesign.com/tr.tr/word/" + SPREADTHESIGN[sign] + "/0/";
+        a.target = "_blank"; a.rel = "noopener";
+        a.textContent = "SpreadTheSign'da izleyin";
+        fb.appendChild(a);
+      }
+    };
+    img.src = "ornekler/" + sign + ".webp";
+  }
+
   function buildSignList() {
     signsEl.innerHTML = "";
     model.labels.filter((s) => s !== "_bos").forEach((s) => {
       const li = document.createElement("li");
       li.dataset.sign = s;
+      li.tabIndex = 0;
+      li.setAttribute("role", "button");
       li.innerHTML = '<span class="name"></span><span class="pct">–</span><span class="bar"><i></i></span>';
       li.querySelector(".name").textContent = model.signs[s][lang];
+      li.addEventListener("click", () => showHowto(s));
+      li.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showHowto(s); } });
       signsEl.appendChild(li);
     });
+    showHowto(selected);
   }
   buildSignList();
 
@@ -241,9 +297,9 @@
     window_.push(TidModel.extractKeypoints(results));
     if (window_.length > model.sequenceLength) window_.shift();
 
-    const hands = results.leftHandLandmarks || results.rightHandLandmarks;
-    if (hands) {
-      lastHand = Date.now();
+    if (results.leftHandLandmarks || results.rightHandLandmarks) lastHand = Date.now();
+    // El tek tük karelerde kaybolunca tanıma kesilmesin; sadece uzun süre görünmezse sıfırla
+    if (Date.now() - lastHand <= model.handGrace * 1000) {
       if (window_.length === model.sequenceLength) {
         const probs = model.predict(window_);
         showProbs(probs);

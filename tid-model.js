@@ -81,6 +81,7 @@
       this.sequenceLength = json.sequenceLength;
       this.confidenceThreshold = json.confidenceThreshold;
       this.stableFrames = json.stableFrames;
+      this.handGrace = json.handGrace ?? 0.6;
       this.w = {};
       for (const [k, v] of Object.entries(json.weights)) this.w[k] = decode(v);
       this.hidden = this.w["gru.weight_hh_l0"].shape[1];

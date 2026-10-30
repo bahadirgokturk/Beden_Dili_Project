@@ -172,7 +172,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/holistic.js" crossorigin="anonymous"></script>
 <!-- ?v= sürümü: dosyalar güncellenince artırılır ki tarayıcı önbellekteki eski kopyayı kullanmasın -->
-<script src="tid-model.js?v=4"></script>
+<script src="tid-model.js?v=5"></script>
 <script>
 (async function () {
   "use strict";
@@ -206,7 +206,7 @@
 
   // Model
   try {
-    const res = await fetch("model.json?v=4");
+    const res = await fetch("model.json?v=5");
     model = new TidModel.SignClassifier(await res.json());
   } catch (e) {
     $("overlay-text").textContent = "Model dosyası yüklenemedi. Sayfayı yenileyin.";

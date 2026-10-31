@@ -172,7 +172,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/holistic.js" crossorigin="anonymous"></script>
 <!-- ?v= sürümü: dosyalar güncellenince artırılır ki tarayıcı önbellekteki eski kopyayı kullanmasın -->
-<script src="tid-model.js?v=5"></script>
+<script src="tid-model.js?v=6"></script>
 <script>
 (async function () {
   "use strict";
@@ -206,7 +206,7 @@
 
   // Model
   try {
-    const res = await fetch("model.json?v=5");
+    const res = await fetch("model.json?v=6");
     model = new TidModel.SignClassifier(await res.json());
   } catch (e) {
     $("overlay-text").textContent = "Model dosyası yüklenemedi. Sayfayı yenileyin.";
@@ -248,12 +248,12 @@
     skelFrame = 0;
     drawSkeletonFrame();
     if (!skeleton) return;
-    // 15 kare/sn; sonda kısa bir bekleme ile döngü
+    // Kayıtların gerçek hızında (model.fps); sonda kısa bir bekleme ile döngü
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     skelTimer = setInterval(() => {
-      skelFrame = (skelFrame + 1) % (skeleton.frames.length + 8);
+      skelFrame = (skelFrame + 1) % (skeleton.frames.length + 5);
       drawSkeletonFrame();
-    }, reduce ? 200 : 66);
+    }, reduce ? 2000 / model.fps : 1000 / model.fps);
   }
 
   function drawSkeletonFrame() {
@@ -405,11 +405,15 @@
     holistic.setOptions({ modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
     holistic.onResults(onResults);
 
-    let started = false, lastTime = -1;
+    let started = false, lastTime = -1, lastSent = 0;
+    // Model saniyede ~10 kareyle eğitildi (bilgisayardaki kayıt döngüsünün hızı). Tarayıcı daha hızlı
+    // işleyebilse de kareler bu hızda gönderilir; yoksa 30 karelik pencere işaretin sadece bir kısmını görür.
+    const frameMs = 1000 / model.fps;
     const loop = async () => {
-      // Kamera yeni kare vermediyse aynı kareyi tekrar işleme
-      if (video.currentTime === lastTime) { requestAnimationFrame(loop); return; }
+      // Kamera yeni kare vermediyse ya da hedef kare hızının önündeysek bekle
+      if (video.currentTime === lastTime || performance.now() - lastSent < frameMs) { requestAnimationFrame(loop); return; }
       lastTime = video.currentTime;
+      lastSent = performance.now();
       mctx.save(); mctx.scale(-1, 1); mctx.drawImage(video, -W, 0, W, H); mctx.restore();
       try { await holistic.send({ image: mirror }); } catch (e) { console.error(e); }
       if (!started) {

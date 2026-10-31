@@ -5,8 +5,9 @@ Almanca ve Fransızca altyazıya çeviren araştırma prototipi.
 
 **Canlı demo:** https://bahadirgokturk.github.io/Beden_Dili_Project/
 
-- 15 havalimanı işareti: merhaba, teşekkürler, yardım, su, tuvalet, bilet, uçak, ağrı, evet,
-  hayır, doktor, ilaç, bekle, kimlik, nerede
+- 30 havalimanı işareti: merhaba, selam, hoşça kal, teşekkürler, özür dilerim, lütfen, tamam,
+  evet, hayır, yardım, su, aç, içmek, tuvalet, bilet, uçak, kapı, saat, acele, bekle, nerede,
+  kimlik, para, telefon, yasak, ağrı, hasta, doktor, ilaç, hastane
 - El ve vücut takibi MediaPipe Holistic ile, sınıflandırma küçük bir GRU modeliyle yapılır.
 - Görüntü yalnızca kullanıcının cihazında işlenir, hiçbir sunucuya gönderilmez.
 

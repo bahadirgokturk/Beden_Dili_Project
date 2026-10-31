@@ -123,7 +123,7 @@
 <div class="wrap">
   <header>
     <h1>TİD Altyazı <span>· havalimanı demosu</span></h1>
-    <div class="tag">Prototip · 9 işaret · 4 dil</div>
+    <div class="tag" id="tag">Prototip · 4 dil</div>
   </header>
 
   <div class="grid">
@@ -163,7 +163,8 @@
       <ul class="signs" id="signs"></ul>
       <div class="notes">
         <p class="note">Görüntü yalnızca bu cihazda işlenir; hiçbir sunucuya gönderilmez.</p>
-        <p class="note">Bu ilk prototip tek bir kişinin kayıtlarıyla eğitildi. Farklı kişilerde, ışıkta ve kamerada doğruluk düşebilir.</p>
+        <p class="note" id="data-note">Bu ilk prototip tek bir kişinin kayıtlarıyla eğitildi. Farklı kişilerde, ışıkta ve kamerada doğruluk düşebilir.</p>
+        <p class="note" id="autsl-note" hidden>Model, kendi kayıtlarımızın yanında <a href="https://arxiv.org/abs/2008.00932" target="_blank" rel="noopener">AUTSL</a> veri setiyle (Sincan &amp; Keleş, 2020, Ankara Üniversitesi) de eğitildi. AUTSL akademik araştırma amaçlı bir veri setidir; bu sayfa ticari olmayan bir araştırma prototipidir.</p>
         <p class="note">İpucu: Bir işareti yaklaşık yarım saniye net yapın; ellerinizi 5 saniye indirince altyazı temizlenir.</p>
       </div>
     </aside>
@@ -172,7 +173,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/holistic.js" crossorigin="anonymous"></script>
 <!-- ?v= sürümü: dosyalar güncellenince artırılır ki tarayıcı önbellekteki eski kopyayı kullanmasın -->
-<script src="tid-model.js?v=6"></script>
+<script src="tid-model.js?v=7"></script>
 <script>
 (async function () {
   "use strict";
@@ -206,7 +207,7 @@
 
   // Model
   try {
-    const res = await fetch("model.json?v=6");
+    const res = await fetch("model.json?v=7");
     model = new TidModel.SignClassifier(await res.json());
   } catch (e) {
     $("overlay-text").textContent = "Model dosyası yüklenemedi. Sayfayı yenileyin.";
@@ -229,8 +230,11 @@
     const img = $("howto-img"), canvas = $("howto-canvas"), link = $("howto-link");
     $("howto-name").textContent = model.signs[sign][lang];
     signsEl.querySelectorAll("li").forEach((li) => li.classList.toggle("selected", li.dataset.sign === sign));
-    link.hidden = !SPREADTHESIGN[sign];
-    if (SPREADTHESIGN[sign]) link.href = "https://www.spreadthesign.com/tr.tr/word/" + SPREADTHESIGN[sign] + "/0/";
+    // Bilinen sözlük sayfası yoksa SpreadTheSign'da kelime araması açılır
+    link.href = SPREADTHESIGN[sign]
+      ? "https://www.spreadthesign.com/tr.tr/word/" + SPREADTHESIGN[sign] + "/0/"
+      : "https://www.spreadthesign.com/tr.tr/search/?q=" + encodeURIComponent(model.signs[sign].tr.replace("?", ""));
+    link.hidden = false;
     if (model.photos && model.photos.has(sign)) {
       clearInterval(skelTimer);
       img.alt = model.signs[sign].tr + " işaretinin yapılışı";
@@ -261,7 +265,8 @@
     g.fillStyle = "#0b1018"; g.fillRect(0, 0, W, H);
     if (!skeleton) {
       g.fillStyle = "#96a2b4"; g.font = "16px sans-serif"; g.textAlign = "center";
-      g.fillText("Bu işaretin örneği yok", W / 2, H / 2);
+      g.fillText("Bu işaretin animasyonu yok;", W / 2, H / 2 - 12);
+      g.fillText("aşağıdaki bağlantıdan izleyin", W / 2, H / 2 + 14);
       return;
     }
     const f = skeleton.frames[Math.min(skelFrame, skeleton.frames.length - 1)];
@@ -306,6 +311,11 @@
     showHowto(selected);
   }
   buildSignList();
+  $("tag").textContent = `Prototip · ${model.labels.filter((s) => s !== "_bos").length} işaret · 4 dil`;
+  if (model.trainedWithAutsl) {
+    $("autsl-note").hidden = false;
+    $("data-note").textContent = "Bu ilk prototiptir; farklı ışıkta ve kamerada doğruluk düşebilir.";
+  }
 
   function showProbs(probs) {
     let best = -1, bestP = 0;

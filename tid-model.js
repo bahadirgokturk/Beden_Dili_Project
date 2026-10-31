@@ -130,6 +130,7 @@
       this.stableFrames = json.stableFrames;
       this.handGrace = json.handGrace ?? 0.6;
       this.fps = json.fps ?? 10;
+      this.trainedWithAutsl = !!json.trainedWithAutsl;
       this.photos = new Set(json.photos || []);
       this.w = {};
       for (const [k, v] of Object.entries(json.weights)) this.w[k] = decode(v);
